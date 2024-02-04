@@ -1,14 +1,14 @@
-from collections.abc import Callable
 import gc
-import socket
-import time
 import random
+import socket
 import string
+import time
 import tracemalloc
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from platform import machine
-from dataclasses import dataclass
-
+from typing import Tuple
 
 if machine().lower().startswith("arm"):
     from cyclops.cyclops import Cyclops
@@ -121,14 +121,13 @@ class Cryterion:
         )
 
 
-def encrypt(
+def benchmark_fn(
     fn: Callable[[bytes], bytes],
     data: bytes,
     key_size: int,
     block_size: int,
     code_size: int,
-) -> bytes:
-    # Disable gc temporarily just like the timeit module.
+) -> Tuple[bytes, Cryterion]:
     gc.collect()
     gc_old = gc.isenabled()
     gc.disable()
@@ -151,8 +150,18 @@ def encrypt(
     benchmark = Cryterion(
         data_size, key_size, block_size, code_size, clock_cycles, duration, peak
     )
-    print(benchmark)
+    return result, benchmark
 
+
+def encrypt(
+    fn: Callable[[bytes], bytes],
+    data: bytes,
+    key_size: int,
+    block_size: int,
+    code_size: int,
+) -> bytes:
+    result, benchmark = benchmark_fn(fn, data, key_size, block_size, code_size)
+    print(benchmark)
     return result
 
 
@@ -163,31 +172,8 @@ def decrypt(
     block_size: int,
     code_size: int,
 ) -> bytes:
-    # Disable gc temporarily just like the timeit module.
-    gc.collect()
-    gc_old = gc.isenabled()
-    gc.disable()
-
-    tracemalloc.start()
-    start_time = time.process_time_ns()
-
-    with Cyclops() as cyclops:
-        result = fn(data)
-
-    duration = time.process_time_ns() - start_time
-    _, peak = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
-
-    if gc_old is True:
-        gc.enable()
-
-    data_size = len(data)
-    clock_cycles = cyclops.cycles
-    benchmark = Cryterion(
-        data_size, key_size, block_size, code_size, clock_cycles, duration, peak
-    )
+    result, benchmark = benchmark_fn(fn, data, key_size, block_size, code_size)
     print(benchmark)
-
     return result
 
 
